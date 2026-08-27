@@ -27,7 +27,7 @@ const labourAvailabilitySchema = new mongoose.Schema({
     providerId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
-        requried: true,
+        required: true,
     },
 
     totalLabours: {
@@ -56,6 +56,21 @@ const labourAvailabilitySchema = new mongoose.Schema({
     },
     categories: [labourCategorySchema],
 
+    location: {
+        type: {
+            type: String,
+            enum: ["Point"],
+            default: "Point"
+        },
+        coordinates: {
+            type: [Number],
+            validate: {
+                validator: coordinates => coordinates.length === 2,
+                message: "Location coordinates must contain longitude and latitude."
+            }
+        }
+    },
+
     description: {
         type: String,
         trim: true
@@ -65,5 +80,7 @@ const labourAvailabilitySchema = new mongoose.Schema({
 }, {
     timestamps: true
 });
+
+labourAvailabilitySchema.index({ location: "2dsphere" });
 
 export default mongoose.model("LabourAvailability", labourAvailabilitySchema);
