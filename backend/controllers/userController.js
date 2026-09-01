@@ -186,6 +186,67 @@ export const logout = async (req, res) => {
     return res.status(200).json({ message: 'Logout successful.' });
 };
 
+export const updateUserProfile = async (req, res) => {
+    try {
+        const userId = req.user;
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+
+        const allowedUpdates = ['username', 'email', 'name', 'mobile', 'role', 'address', 'location', 'password'];
+        const updates = {};
+
+        for (const field of allowedUpdates) {
+            if (req.body[field] === undefined || req.body[field] === null) continue;
+
+            if (typeof req.body[field] === 'string' && req.body[field].trim() === '') {
+                continue;
+            }
+
+            updates[field] = req.body[field];
+        }
+
+        if (Object.keys(updates).length === 0) {
+            return res.status(400).json({ message: 'No valid profile fields provided for update.' });
+        }
+
+        if (updates.username && updates.username !== user.username) {
+            const usernameExists = await User.findOne({ username: updates.username });
+            if (usernameExists && usernameExists._id.toString() !== userId) {
+                return res.status(400).json({ message: 'Username already exists.' });
+            }
+        }
+
+        if (updates.email && updates.email !== user.email) {
+            const emailExists = await User.findOne({ email: updates.email });
+            if (emailExists && emailExists._id.toString() !== userId) {
+                return res.status(400).json({ message: 'Email already exists.' });
+            }
+        }
+
+        if (updates.address) {
+            updates.address = {
+                ...(user.address?.toObject ? user.address.toObject() : user.address || {}),
+                ...(updates.address || {})
+            };
+        }
+
+        Object.assign(user, updates);
+        await user.save();
+
+        const updatedUser = await User.findById(userId).select('-password');
+
+        return res.status(200).json({
+            message: 'Profile updated successfully.',
+            user: updatedUser
+        });
+    } catch (error) {
+        return res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
 export const deleteUser = async (req, res) => {
     try {
         const { username } = req.body;
