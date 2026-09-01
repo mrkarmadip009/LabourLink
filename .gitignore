@@ -12,6 +12,22 @@ yarn-error.log*
 .env.local
 .env.production
 
+# Test coverage and results
+coverage/
+*.lcov
+__tests__/
+*.test.js
+*.spec.js
+.jest/
+
+# IDE and editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
 # Operating system files
 .DS_Store
 Thumbs.db
+
