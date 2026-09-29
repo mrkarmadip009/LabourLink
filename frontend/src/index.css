@@ -1,0 +1,19 @@
+:root {
+  font: 16px/145% 'Trebuchet MS', 'Segoe UI', sans-serif;
+  color: #27333a;
+  background: #f4f1eb;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+#root {
+  min-height: 100svh;
+}

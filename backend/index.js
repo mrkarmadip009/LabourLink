@@ -1,7 +1,6 @@
 import express  from 'express';
-import mongoose from 'mongoose';
-import connectDb from './config/db.js';
 import cors from 'cors';
+import connectDb from './config/db.js';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 dotenv.config();
@@ -16,11 +15,24 @@ import bookingRoutes from './routes/bookingRoutes.js';
 import labourAvailabilityRoutes from './routes/labourAvailabilityRoutes.js';
 import reviewRoutes from './routes/reviewRoutes.js';
 
-const app =express();
 
-const PORT = process.env.PORT || 5000;
 
-app.use(cors({ origin: 'http://localhost:3000', credentials: true}));
+const app = express();
+
+
+const PORT = process.env.PORT || 3000;
+const allowedOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true,
+}));
 app.use(express.json());
 app.use(cookieParser());
 
@@ -29,7 +41,14 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/labour-availability', labourAvailabilityRoutes);
 app.use('/api/reviews', reviewRoutes);
 
-connectDb()
+app.get('/api/test', (req, res) => {
+    res.status(200).json({
+        message: 'Backend connected successfully.',
+        status: 'ok',
+    });
+});
+
+connectDb();
 
 const createCollections = async () => {
     await User.createCollection();
@@ -39,12 +58,11 @@ const createCollections = async () => {
     await LabourAvailability.createCollection();
 };
 
-app.get('/',(req,res)=>{
+app.get('/', (req, res) => {
     res.send('your express server is running');
 });
 
-app.listen(PORT,()=>
-    {
-        console.log('Listening at ', PORT);
-    });
+app.listen(PORT, () => {
+    console.log('Listening at ', PORT);
+});
 

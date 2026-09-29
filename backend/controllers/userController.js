@@ -3,12 +3,46 @@ import bcrypt from 'bcryptjs';
 
 import User from '../models/user.js';
 
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const mobileRegex = /^[6-9]\d{9}$/;
+const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+
+const normalizeUserInput = (data) => ({
+    ...data,
+    username: data.username?.trim(),
+    email: data.email?.trim().toLowerCase(),
+    name: data.name?.trim(),
+    mobile: data.mobile?.toString().trim(),
+    role: data.role?.trim(),
+});
+
+const validatePassword = (password) => {
+    if (!password || !passwordRegex.test(password)) {
+        return 'Password must be at least 8 characters long and include uppercase, lowercase, a number, and a special character.';
+    }
+    return null;
+};
+
 export const createUser = async (req, res) => {
     try {
-        const {username, email, name, password, mobile, role, address, location} = req.body;
+        const cleanedData = normalizeUserInput(req.body);
+        const {username, email, name, password, mobile, role, address, location} = cleanedData;
 
         if(!username || !email || !name || !password || !mobile || !role || !address) {
             return res.status(400).json({message : "Please fill all the fields."});
+        }
+
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({ message: 'Please enter a valid email address.' });
+        }
+
+        if (!mobileRegex.test(mobile)) {
+            return res.status(400).json({ message: 'Mobile number must be a valid 10-digit Indian number.' });
+        }
+
+        const passwordError = validatePassword(password);
+        if (passwordError) {
+            return res.status(400).json({ message: passwordError });
         }
 
         const userExists = await User.findOne({ username });
@@ -210,6 +244,29 @@ export const updateUserProfile = async (req, res) => {
 
         if (Object.keys(updates).length === 0) {
             return res.status(400).json({ message: 'No valid profile fields provided for update.' });
+        }
+
+        if (updates.email) {
+            const normalizedEmail = updates.email.trim().toLowerCase();
+            if (!emailRegex.test(normalizedEmail)) {
+                return res.status(400).json({ message: 'Please enter a valid email address.' });
+            }
+            updates.email = normalizedEmail;
+        }
+
+        if (updates.mobile) {
+            const normalizedMobile = updates.mobile.toString().trim();
+            if (!mobileRegex.test(normalizedMobile)) {
+                return res.status(400).json({ message: 'Mobile number must be a valid 10-digit Indian number.' });
+            }
+            updates.mobile = normalizedMobile;
+        }
+
+        if (updates.password) {
+            const passwordError = validatePassword(updates.password);
+            if (passwordError) {
+                return res.status(400).json({ message: passwordError });
+            }
         }
 
         if (updates.username && updates.username !== user.username) {

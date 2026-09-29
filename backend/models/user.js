@@ -1,29 +1,47 @@
 import mongoose from "mongoose";
 import bcrypt from 'bcryptjs';
 
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const mobileRegex = /^[6-9]\d{9}$/;
+
 const userSchema = new mongoose.Schema({
   
   username: {
     type: String,
     required: true,
     unique: true,
+    trim: true,
+    minlength: 3,
   },
   email: {
     type: String,
     required: true,
     unique: true,
+    trim: true,
+    lowercase: true,
+    validate: {
+      validator: (value) => emailRegex.test(value),
+      message: 'Please enter a valid email address.'
+    }
   },
   name: {
     type: String,
-    required: true
+    required: true,
+    trim: true,
   },
   password: {
     type: String,
     required: true,
+    minlength: 6,
   },
   mobile: {
-    type: Number,
+    type: String,
     required: true,
+    trim: true,
+    validate: {
+      validator: (value) => mobileRegex.test(value),
+      message: 'Mobile number must be a valid 10-digit Indian number.'
+    }
   },
   role: {
     type: String,
