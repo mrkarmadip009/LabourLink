@@ -31,6 +31,7 @@ function AuthPanel({ auth }) {
           onChange={auth.updateField}
           onSubmit={auth.submitForm}
           onTogglePassword={() => auth.setShowPassword((visible) => !visible)}
+          onSetLocation={auth.setLocation}
         />
         <p className="legal-copy">
           By continuing, you agree to LabourLink's terms and privacy policy.

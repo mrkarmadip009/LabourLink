@@ -9,6 +9,9 @@ const addLabourList = async (req, res) => {
 		if (!Array.isArray(categories)) {
 			return res.status(400).json({ message: 'Categories must be an array.' });
 		}
+		if (!categories.length || categories.some(category => !category.categoryId)) {
+			return res.status(400).json({ message: 'At least one valid category is required.' });
+		}
 
 		const categoryIds = categories.map(category => category.categoryId);
 		const categoryCount = await Category.countDocuments({ _id: { $in: categoryIds } });
@@ -17,8 +20,19 @@ const addLabourList = async (req, res) => {
 			return res.status(400).json({ message: 'One or more categories are invalid.' });
 		}
 
+		const provider = await User.findById(req.user).select('location');
+		const hasListingLocation = req.body.location?.type === 'Point'
+			&& Array.isArray(req.body.location.coordinates)
+			&& req.body.location.coordinates.length === 2;
+		const providerLocation = provider?.location?.type === 'Point'
+			&& Array.isArray(provider.location.coordinates)
+			&& provider.location.coordinates.length === 2
+			? { type: 'Point', coordinates: [...provider.location.coordinates] }
+			: undefined;
+
 		const labourList = await LabourAvailability.create({
 			...req.body,
+			...(hasListingLocation ? {} : providerLocation ? { location: providerLocation } : {}),
 			providerId: req.user
 		});
 
@@ -142,4 +156,59 @@ const getLabourList = async (req, res) => {
 	}
 };
 
-export default { addLabourList, addCategory, getCategory, getLabourList };
+const getProviderListings = async (req, res) => {
+    try {
+        const provider = await User.findById(req.user).select('location');
+        const providerLocation = provider?.location?.type === 'Point'
+            && Array.isArray(provider.location.coordinates)
+            && provider.location.coordinates.length === 2
+            ? { type: 'Point', coordinates: [...provider.location.coordinates] }
+            : undefined;
+
+        if (providerLocation) {
+            await LabourAvailability.updateMany(
+                {
+                    providerId: req.user,
+                    $or: [
+                        { location: null },
+                        { 'location.coordinates': { $exists: false } }
+                    ]
+                },
+                { $set: { location: providerLocation } }
+            );
+        }
+
+        const labourLists = await LabourAvailability.find({ providerId: req.user })
+            .populate('categories.categoryId')
+            .sort({ createdAt: -1 });
+        return res.status(200).json({ labourLists });
+    } catch (error) {
+        return res.status(500).json({ message: 'Unable to fetch your listings.', error: error.message });
+    }
+};
+
+const updateLabourList = async (req, res) => {
+    try {
+        const listing = await LabourAvailability.findOneAndUpdate(
+            { _id: req.params.listingId, providerId: req.user },
+            req.body,
+            { new: true, runValidators: true }
+        );
+        if (!listing) return res.status(404).json({ message: 'Listing not found.' });
+        return res.status(200).json({ message: 'Listing updated successfully.', labourList: listing });
+    } catch (error) {
+        return res.status(400).json({ message: 'Unable to update listing.', error: error.message });
+    }
+};
+
+const deleteLabourList = async (req, res) => {
+    try {
+        const listing = await LabourAvailability.findOneAndDelete({ _id: req.params.listingId, providerId: req.user });
+        if (!listing) return res.status(404).json({ message: 'Listing not found.' });
+        return res.status(200).json({ message: 'Listing deleted successfully.' });
+    } catch (error) {
+        return res.status(500).json({ message: 'Unable to delete listing.', error: error.message });
+    }
+};
+
+export default { addLabourList, addCategory, getCategory, getLabourList, getProviderListings, updateLabourList, deleteLabourList };

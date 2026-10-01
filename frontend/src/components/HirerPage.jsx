@@ -1,18 +1,12 @@
-function HirerPage({ user, onSignOut }) {
+import AppHeader from './AppHeader';
+
+function HirerPage({ user, currentPage, onNavigate, onSignOut }) {
   const address = user.address || {};
   const location = [address.city, address.state].filter(Boolean).join(", ");
 
   return (
     <main className="hirer-page">
-      <header className="hirer-header">
-        <div className="hirer-brand">
-          <div className="brand-mark">LL</div>
-          <span>LabourLink</span>
-        </div>
-        <button className="sign-out-button" type="button" onClick={onSignOut}>
-          Sign out
-        </button>
-      </header>
+      <AppHeader {...{ user, currentPage, onNavigate, onSignOut }} />
 
       <section className="hirer-hero">
         <div>
@@ -73,7 +67,7 @@ function HirerPage({ user, onSignOut }) {
             gender.
           </p>
         </div>
-        <button className="primary-action" type="button">
+        <button className="primary-action" type="button" onClick={() => onNavigate('find')}>
           Explore availability <span aria-hidden="true">-&gt;</span>
         </button>
       </section>

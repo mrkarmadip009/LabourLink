@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import { getCurrentLocation } from '../services/geolocation';
+
 function AuthForm({
   form,
   feedback,
@@ -7,7 +10,18 @@ function AuthForm({
   onChange,
   onSubmit,
   onTogglePassword,
+  onSetLocation,
 }) {
+  const [locationStatus, setLocationStatus] = useState('');
+  const captureLocation = async () => {
+    setLocationStatus('Getting location...');
+    try {
+      onSetLocation(await getCurrentLocation());
+      setLocationStatus('Location captured');
+    } catch (error) {
+      setLocationStatus(error.message);
+    }
+  };
   return (
     <form onSubmit={onSubmit} className="auth-form">
       {isRegistering && (
@@ -145,6 +159,12 @@ function AuthForm({
                 <option value="Provider">A service provider</option>
               </select>
             </label>
+          </div>
+          <div className="location-capture reveal">
+            <button className="secondary-button" type="button" onClick={captureLocation}>
+              Use my current location
+            </button>
+            <span>{locationStatus || 'Recommended for nearby labour search'}</span>
           </div>
         </>
       )}

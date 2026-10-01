@@ -6,8 +6,31 @@ const book = async (req, res) => {
     try {
         const { listingId, seekerId, totalLabours, maleLabours, femaleLabours, bookingDate, totalCost, description, status, paymentStatus} = req.body;
 
-        if(!listingId || !seekerId || !totalLabours || !maleLabours || !femaleLabours || !bookingDate || !totalCost || !description || !status || !paymentStatus) {
+        if(!listingId || !seekerId || totalLabours === undefined || maleLabours === undefined || femaleLabours === undefined || !bookingDate || totalCost === undefined || !description || !status || !paymentStatus) {
             return res.status(400).json({ message: "Please fill all the fields." });
+        }
+
+        const listing = await LabourAvailability.findById(listingId).select('availabilityStart availabilityEnd availableLabours');
+        if (!listing) {
+            return res.status(404).json({ message: "Labour listing not found." });
+        }
+
+        const requestedDate = new Date(bookingDate);
+        if (!listing.availabilityStart || !listing.availabilityEnd) {
+            return res.status(400).json({ message: "This provider has not configured an availability date range." });
+        }
+        if (Number.isNaN(requestedDate.getTime())) {
+            return res.status(400).json({ message: "Booking date is invalid." });
+        }
+        const requestedDateKey = requestedDate.toISOString().slice(0, 10);
+        const startDateKey = listing.availabilityStart.toISOString().slice(0, 10);
+        const endDateKey = listing.availabilityEnd.toISOString().slice(0, 10);
+        if (requestedDateKey < startDateKey
+            || requestedDateKey > endDateKey) {
+            return res.status(400).json({ message: "Booking date must be within the provider's availability range." });
+        }
+        if (Number(totalLabours) > listing.availableLabours) {
+            return res.status(409).json({ message: "The requested number of workers is not currently available." });
         }
 
         const newBooking = new Booking({
@@ -111,11 +134,35 @@ const updateBookingStatus = async (req, res) => {
         );
 
         if (!updatedBooking) {
-            return res.status(404).json({ message: "Booking not found." });
+            return res.status(status === "accepted" ? 409 : 404).json({
+                message: status === "accepted"
+                    ? "This booking is no longer pending."
+                    : "Booking not found."
+            });
+        }
+
+        if (status === "accepted" && updatedBooking.listingId && updatedBooking.totalLabours) {
+            const listing = await LabourAvailability.findOneAndUpdate(
+                {
+                    _id: updatedBooking.listingId,
+                    availableLabours: { $gte: updatedBooking.totalLabours }
+                },
+                { $inc: { availableLabours: -updatedBooking.totalLabours } },
+                { new: true }
+            );
+
+            if (!listing) {
+                await Booking.findByIdAndUpdate(bookingId, { status: "pending" }, { new: true });
+                return res.status(409).json({
+                    message: "Not enough available labour to accept this booking."
+                });
+            }
         }
 
         return res.status(200).json({
-            message: "Booking status updated successfully",
+            message: status === "accepted"
+                ? "Booking status updated successfully; labour availability updated."
+                : "Booking status updated successfully",
             booking: updatedBooking
         });
 
@@ -169,6 +216,14 @@ const deleteBooking = async (req, res) => {
 
         if (!deletedBooking) {
             return res.status(404).json({ message: "Booking not found." });
+        }
+
+        if (deletedBooking.status === "accepted" && deletedBooking.listingId && deletedBooking.totalLabours) {
+            await LabourAvailability.findByIdAndUpdate(
+                deletedBooking.listingId,
+                { $inc: { availableLabours: deletedBooking.totalLabours } },
+                { new: true }
+            );
         }
 
         return res.status(200).json({

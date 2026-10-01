@@ -1,5 +1,20 @@
 import mongoose from "mongoose";
 
+const pointSchema = new mongoose.Schema({
+    type: {
+        type: String,
+        enum: ["Point"],
+        default: "Point"
+    },
+    coordinates: {
+        type: [Number],
+        validate: {
+            validator: coordinates => coordinates.length === 2,
+            message: "Location coordinates must contain longitude and latitude."
+        }
+    }
+}, { _id: false });
+
 const labourCategorySchema =new mongoose.Schema(
     {
         categoryId: {
@@ -57,24 +72,17 @@ const labourAvailabilitySchema = new mongoose.Schema({
     categories: [labourCategorySchema],
 
     location: {
-        type: {
-            type: String,
-            enum: ["Point"],
-            default: "Point"
-        },
-        coordinates: {
-            type: [Number],
-            validate: {
-                validator: coordinates => coordinates.length === 2,
-                message: "Location coordinates must contain longitude and latitude."
-            }
-        }
+        type: pointSchema,
+        default: null
     },
 
     description: {
         type: String,
         trim: true
-    }, 
+    },
+
+    availabilityStart: Date,
+    availabilityEnd: Date,
 
     
 }, {

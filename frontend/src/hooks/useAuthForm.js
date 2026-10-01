@@ -35,6 +35,11 @@ export function useAuthForm() {
     setFeedback(null);
   };
 
+  const setLocation = (location) => {
+    setForm((current) => ({ ...current, location }));
+    setFeedback({ type: 'success', text: 'Current location captured.' });
+  };
+
   const switchMode = (nextMode) => {
     setMode(nextMode);
     setFeedback(null);
@@ -82,6 +87,7 @@ export function useAuthForm() {
     mode,
     showPassword,
     setShowPassword,
+    setLocation,
     signOut,
     submitForm,
     switchMode,
