@@ -57,6 +57,18 @@ const labourAvailabilitySchema = new mongoose.Schema({
         min: 0
     },
 
+    regularLabours: {
+    type: Number,
+    default: 0,
+    min: 0
+    },
+
+    regularLabourPrice: {
+    type: Number,
+    default: 0,
+    min: 0
+    },
+
     gender: {
         male: {
             type: Number,
@@ -87,6 +99,18 @@ const labourAvailabilitySchema = new mongoose.Schema({
     
 }, {
     timestamps: true
+});
+
+labourAvailabilitySchema.pre('validate', function () {
+    const male = this.gender?.male || 0;
+    const female = this.gender?.female || 0;
+    if (male + female > this.availableLabours) {
+        throw new Error("Men and women workers together cannot exceed available workers.");
+    }
+    if ((this.regularLabours || 0) > this.availableLabours
+        || (this.categories || []).some(category => category.labourCount > this.availableLabours)) {
+        throw new Error("Regular or category workers cannot exceed available workers.");
+    }
 });
 
 labourAvailabilitySchema.index({ location: "2dsphere" });

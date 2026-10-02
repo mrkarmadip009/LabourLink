@@ -1,6 +1,26 @@
 import LabourAvailability from '../models/labourAvailability.js';
+import Booking from '../models/booking.js';
 import Category from '../models/category.js';
 import User from '../models/user.js';
+
+const validateLabourCounts = ({ totalLabours, availableLabours, gender = {} }) => {
+	const total = Number(totalLabours);
+	const available = Number(availableLabours);
+	const male = Number(gender.male || 0);
+	const female = Number(gender.female || 0);
+
+	if (![total, available, male, female].every(Number.isFinite)
+		|| total < 0 || available < 0 || male < 0 || female < 0) {
+		return 'Worker counts must be non-negative numbers.';
+	}
+	if (available > total) {
+		return 'Available workers cannot exceed total workers.';
+	}
+	if (male + female > available) {
+		return 'Men and women workers together cannot exceed available workers.';
+	}
+	return null;
+};
 
 const addLabourList = async (req, res) => {
 	try {
@@ -12,12 +32,24 @@ const addLabourList = async (req, res) => {
 		if (!categories.length || categories.some(category => !category.categoryId)) {
 			return res.status(400).json({ message: 'At least one valid category is required.' });
 		}
-
 		const categoryIds = categories.map(category => category.categoryId);
-		const categoryCount = await Category.countDocuments({ _id: { $in: categoryIds } });
+		const uniqueCategoryIds = [...new Set(categoryIds.map(String))];
+		const categoryCount = await Category.countDocuments({ _id: { $in: uniqueCategoryIds } });
 
-		if (categoryCount !== categoryIds.length) {
+		if (categoryCount !== uniqueCategoryIds.length) {
 			return res.status(400).json({ message: 'One or more categories are invalid.' });
+		}
+		const countError = validateLabourCounts(req.body);
+		if (countError) return res.status(400).json({ message: countError });
+		const regularLabours = Number(req.body.regularLabours ?? req.body.availableLabours);
+		const availableLabours = Number(req.body.availableLabours);
+		if (!Number.isInteger(regularLabours) || regularLabours < 0 || regularLabours > availableLabours) {
+			return res.status(400).json({ message: `Regular workers (${regularLabours}) cannot exceed available workers (${availableLabours}).` });
+		}
+		const exceededCategory = categories.find(category => !Number.isInteger(Number(category.labourCount))
+			|| Number(category.labourCount) < 0 || Number(category.labourCount) > availableLabours);
+		if (exceededCategory) {
+			return res.status(400).json({ message: `Category workers (${exceededCategory.labourCount}) cannot exceed available workers (${availableLabours}).` });
 		}
 
 		const provider = await User.findById(req.user).select('location');
@@ -32,6 +64,7 @@ const addLabourList = async (req, res) => {
 
 		const labourList = await LabourAvailability.create({
 			...req.body,
+			regularLabours,
 			...(hasListingLocation ? {} : providerLocation ? { location: providerLocation } : {}),
 			providerId: req.user
 		});
@@ -94,7 +127,7 @@ const getLabourList = async (req, res) => {
 		}
 
 		const radius = Number(req.query.radius || 10);
-		const { gender, categoryId } = req.query;
+		const { gender, categoryId, date } = req.query;
 		const minPrice = req.query.minPrice === undefined ? undefined : Number(req.query.minPrice);
 		const maxPrice = req.query.maxPrice === undefined ? undefined : Number(req.query.maxPrice);
 
@@ -104,6 +137,14 @@ const getLabourList = async (req, res) => {
 
 		if (gender && !['male', 'female'].includes(gender)) {
 			return res.status(400).json({ message: 'Gender must be male or female.' });
+		}
+
+		let requestedDate;
+		if (date) {
+			requestedDate = new Date(`${date}T00:00:00.000Z`);
+			if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(requestedDate.getTime())) {
+				return res.status(400).json({ message: 'Work date is invalid.' });
+			}
 		}
 
 		if (minPrice !== undefined && (!Number.isFinite(minPrice) || minPrice < 0)) {
@@ -129,6 +170,13 @@ const getLabourList = async (req, res) => {
 
 		if (gender) {
 			filter[`gender.${gender}`] = { $gt: 0 };
+		}
+
+		if (requestedDate) {
+			const nextDate = new Date(requestedDate);
+			nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+			filter.availabilityStart = { $lt: nextDate };
+			filter.availabilityEnd = { $gte: requestedDate };
 		}
 
 		if (categoryId || minPrice !== undefined || maxPrice !== undefined) {
@@ -189,9 +237,22 @@ const getProviderListings = async (req, res) => {
 
 const updateLabourList = async (req, res) => {
     try {
+        const countError = validateLabourCounts(req.body);
+        if (countError) return res.status(400).json({ message: countError });
+        const categories = Array.isArray(req.body.categories) ? req.body.categories : [];
+        const regularLabours = Number(req.body.regularLabours ?? req.body.availableLabours);
+        const availableLabours = Number(req.body.availableLabours);
+        if (!Number.isInteger(regularLabours) || regularLabours < 0 || regularLabours > availableLabours) {
+            return res.status(400).json({ message: `Regular workers (${regularLabours}) cannot exceed available workers (${availableLabours}).` });
+        }
+        const exceededCategory = categories.find(category => !Number.isInteger(Number(category.labourCount))
+            || Number(category.labourCount) < 0 || Number(category.labourCount) > availableLabours);
+        if (exceededCategory) {
+            return res.status(400).json({ message: `Category workers (${exceededCategory.labourCount}) cannot exceed available workers (${availableLabours}).` });
+        }
         const listing = await LabourAvailability.findOneAndUpdate(
             { _id: req.params.listingId, providerId: req.user },
-            req.body,
+            { ...req.body, regularLabours },
             { new: true, runValidators: true }
         );
         if (!listing) return res.status(404).json({ message: 'Listing not found.' });
@@ -203,6 +264,14 @@ const updateLabourList = async (req, res) => {
 
 const deleteLabourList = async (req, res) => {
     try {
+        const hasCompletedBooking = await Booking.exists({
+            listingId: req.params.listingId,
+            status: 'accepted',
+            paymentStatus: 'completed'
+        });
+        if (hasCompletedBooking) {
+            return res.status(409).json({ message: 'This listing cannot be deleted because it has a completed booking.' });
+        }
         const listing = await LabourAvailability.findOneAndDelete({ _id: req.params.listingId, providerId: req.user });
         if (!listing) return res.status(404).json({ message: 'Listing not found.' });
         return res.status(200).json({ message: 'Listing deleted successfully.' });

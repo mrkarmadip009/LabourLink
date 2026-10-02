@@ -4,14 +4,27 @@ import api, { getErrorMessage } from '../services/api';
 
 function BookingsPage({ user, currentPage, onNavigate, onSignOut }) {
   const [bookings, setBookings] = useState([]);
+  const [reviews, setReviews] = useState({});
+  const [reviewForm, setReviewForm] = useState({});
+  const [reviewFeedback, setReviewFeedback] = useState({});
   const userId = user.id || user._id;
   const [message, setMessage] = useState(userId ? 'Loading your bookings...' : 'Your account ID is not available. Please sign in again.');
 
   useEffect(() => {
     if (!userId) return undefined;
     api.get(`/api/bookings/seeker/${userId}`)
-      .then(({ data }) => {
-        setBookings(data.bookings || []);
+      .then(async ({ data }) => {
+        const nextBookings = data.bookings || [];
+        setBookings(nextBookings);
+        const reviewResults = await Promise.all(nextBookings.map(async (booking) => {
+          try {
+            const response = await api.get(`/api/reviews/booking/${booking._id}`);
+            return [booking._id, response.data.review];
+          } catch {
+            return [booking._id, null];
+          }
+        }));
+        setReviews(Object.fromEntries(reviewResults));
         setMessage((data.bookings || []).length ? '' : 'You have no bookings yet.');
       })
       .catch((error) => setMessage(error.response?.status === 404 ? 'You have no bookings yet.' : getErrorMessage(error, 'Bookings could not be loaded.')));
@@ -35,6 +48,22 @@ function BookingsPage({ user, currentPage, onNavigate, onSignOut }) {
     }
   };
 
+  const submitReview = async (booking) => {
+    const form = reviewForm[booking._id] || { rating: 5, comment: '' };
+    try {
+      const { data } = await api.post('/api/reviews', {
+        bookingId: booking._id,
+        seekerId: userId,
+        rating: Number.parseInt(form.rating, 10),
+        comment: form.comment.trim(),
+      });
+      setReviews((current) => ({ ...current, [booking._id]: data.review }));
+      setReviewFeedback((current) => ({ ...current, [booking._id]: 'Review submitted.' }));
+    } catch (error) {
+      setReviewFeedback((current) => ({ ...current, [booking._id]: getErrorMessage(error, 'Could not submit review.') }));
+    }
+  };
+
   return (
     <main className="app-page">
       <AppHeader {...{ user, currentPage, onNavigate, onSignOut }} />
@@ -49,6 +78,25 @@ function BookingsPage({ user, currentPage, onNavigate, onSignOut }) {
             <div><span className="detail-label">Total</span><strong>₹{booking.totalCost}</strong><span className={`booking-status ${booking.paymentStatus}`}>{booking.paymentStatus} payment</span></div>
             {booking.status === 'pending' && <button className="text-action" type="button" onClick={() => cancelBooking(booking._id)}>Cancel request</button>}
             {booking.status === 'accepted' && booking.paymentStatus === 'pending' && <button className="text-action" type="button" onClick={() => updatePayment(booking._id)}>Mark payment complete</button>}
+            {booking.status === 'accepted' && booking.paymentStatus === 'completed' && (
+              <div className="review-panel">
+                <span className="detail-label">Review provider</span>
+                {reviews[booking._id] ? (
+                  <div className="review-summary"><strong>{'★'.repeat(reviews[booking._id].rating)}{'☆'.repeat(5 - reviews[booking._id].rating)}</strong><span>{reviews[booking._id].comment || 'No comment added.'}</span></div>
+                ) : (
+                  <>
+                    <div className="review-fields">
+                      <select value={reviewForm[booking._id]?.rating || 5} onChange={(event) => setReviewForm((current) => ({ ...current, [booking._id]: { ...(current[booking._id] || {}), rating: event.target.value } }))}>
+                        {[5, 4, 3, 2, 1].map((rating) => <option key={rating} value={rating}>{rating} stars</option>)}
+                      </select>
+                      <input placeholder="How were the workers?" value={reviewForm[booking._id]?.comment || ''} onChange={(event) => setReviewForm((current) => ({ ...current, [booking._id]: { ...(current[booking._id] || {}), comment: event.target.value } }))} />
+                      <button className="secondary-button" type="button" onClick={() => submitReview(booking)}>Submit review</button>
+                    </div>
+                    {reviewFeedback[booking._id] && <small className="review-feedback">{reviewFeedback[booking._id]}</small>}
+                  </>
+                )}
+              </div>
+            )}
           </article>
         ))}</div>
       </section>

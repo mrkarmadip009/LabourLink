@@ -6,6 +6,11 @@ const bookingSchema = new mongoose.Schema({
         ref: "LabourAvailability",
         required: true
     },
+    providerId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        required: false
+    },
     seekerid: {
         type:mongoose.Schema.Types.ObjectId,
         ref: "User",
@@ -17,6 +22,25 @@ const bookingSchema = new mongoose.Schema({
         required: true,
         min: 1
     },
+
+    regularLabours: {
+        type: Number,
+        default: 0,
+        min: 0
+    },
+
+    categoryLabours: [{
+        categoryId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Category",
+            required: true
+        },
+        labourCount: {
+            type: Number,
+            required: true,
+            min: 0
+        }
+    }],
 
     maleLabours: {
         type: Number,

@@ -8,9 +8,11 @@ import ProfilePage from './components/ProfilePage';
 import ProviderPage from './components/ProviderPage';
 import { useAuthForm } from './hooks/useAuthForm';
 import { useState } from 'react';
+import LandingPage from './components/LandingPage';
 
 function App() {
   const auth = useAuthForm();
+  const [showAuth, setShowAuth] = useState(false);
   const [page, setPage] = useState('dashboard');
 
   if (auth.currentUser) {
@@ -29,6 +31,10 @@ function App() {
     if (page === 'bookings') return <BookingsPage {...commonProps} />;
     if (page === 'profile') return <ProfilePage {...commonProps} />;
     return <HirerPage {...commonProps} />;
+  }
+
+  if (!showAuth) {
+    return <LandingPage onGetStarted={(mode) => { auth.switchMode(mode); setShowAuth(true); }} />;
   }
 
   return (

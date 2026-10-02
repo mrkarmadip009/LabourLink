@@ -7,8 +7,9 @@ const blankForm = {
   availableLabours: 1,
   male: 0,
   female: 0,
-  categoryId: "",
-  priceRate: "",
+  regularLabours: 1,
+  regularLabourPrice: "",
+  listingCategories: [],
   description: "",
   availabilityStart: "",
   availabilityEnd: "",
@@ -46,6 +47,17 @@ function ProviderPage({ user, currentPage, onNavigate, onSignOut }) {
       setBookings(
         responses.flatMap((response) => response.data.bookings || []),
       );
+      const loadedBookings = responses.flatMap((response) => response.data.bookings || []);
+      const reviewResponses = await Promise.all(loadedBookings.map(async (booking) => {
+        try {
+          const { data } = await api.get(`/api/reviews/booking/${booking._id}`);
+          return [booking._id, data.review];
+        } catch {
+          return [booking._id, null];
+        }
+      }));
+      const reviewsByBooking = Object.fromEntries(reviewResponses);
+      setBookings(loadedBookings.map((booking) => ({ ...booking, review: reviewsByBooking[booking._id] })));
     } catch (error) {
       setFeedback({
         type: "error",
@@ -71,7 +83,12 @@ function ProviderPage({ user, currentPage, onNavigate, onSignOut }) {
       });
       const createdCategory = data.category;
       setCategories((current) => [...current, createdCategory]);
-      setForm((current) => ({ ...current, categoryId: createdCategory._id }));
+      setForm((current) => ({
+        ...current,
+        listingCategories: current.listingCategories.some((item) => item.categoryId === createdCategory._id)
+          ? current.listingCategories
+          : [...current.listingCategories, { categoryId: createdCategory._id, labourCount: 0, priceRate: "" }],
+      }));
       setCategoryName("");
       setShowCategoryForm(false);
       setFeedback({ type: "success", text: "Category added and selected." });
@@ -85,24 +102,50 @@ function ProviderPage({ user, currentPage, onNavigate, onSignOut }) {
     }
   };
   const editListing = (listing) => {
-    const category = listing.categories?.[0] || {};
     setEditingId(listing._id);
     setForm({
       totalLabours: listing.totalLabours,
       availableLabours: listing.availableLabours,
       male: listing.gender?.male || 0,
       female: listing.gender?.female || 0,
-      categoryId: category.categoryId?._id || category.categoryId || "",
-      priceRate: category.priceRate || "",
+      regularLabours: listing.regularLabours ?? listing.availableLabours,
+      regularLabourPrice: listing.regularLabourPrice || "",
+      listingCategories: (listing.categories || []).map((category) => ({
+        categoryId: category.categoryId?._id || category.categoryId,
+        labourCount: category.labourCount || 0,
+        priceRate: category.priceRate || "",
+      })),
       description: listing.description || "",
       availabilityStart: listing.availabilityStart?.slice(0, 10) || "",
       availabilityEnd: listing.availabilityEnd?.slice(0, 10) || "",
     });
   };
+  const updateListingCategory = (categoryId, priceRate) => {
+    setForm((current) => ({
+      ...current,
+      listingCategories: current.listingCategories.map((category) =>
+        category.categoryId === categoryId ? { ...category, priceRate } : category,
+      ),
+    }));
+  };
+  const updateListingCategoryCount = (categoryId, labourCount) => {
+    setForm((current) => ({
+      ...current,
+      listingCategories: current.listingCategories.map((category) =>
+        category.categoryId === categoryId ? { ...category, labourCount } : category,
+      ),
+    }));
+  };
+  const removeListingCategory = (categoryId) => {
+    setForm((current) => ({
+      ...current,
+      listingCategories: current.listingCategories.filter((category) => category.categoryId !== categoryId),
+    }));
+  };
   const saveListing = async (event) => {
     event.preventDefault();
-    if (!form.categoryId) {
-      setFeedback({ type: "error", text: "Choose a category before publishing the listing." });
+    if (!form.listingCategories.length) {
+      setFeedback({ type: "error", text: "Add at least one category before publishing the listing." });
       return;
     }
     if (Number(form.availableLabours) > Number(form.totalLabours)) {
@@ -110,20 +153,40 @@ function ProviderPage({ user, currentPage, onNavigate, onSignOut }) {
       return;
     }
     if (Number(form.male) + Number(form.female) > Number(form.availableLabours)) {
-      setFeedback({ type: "error", text: "The gender split cannot exceed available workers." });
+      setFeedback({ type: "error", text: `Men and women workers together cannot exceed available workers. Current total: ${Number(form.male) + Number(form.female)} / ${Number(form.availableLabours)}.` });
+      return;
+    }
+    const availableWorkers = Number(form.availableLabours);
+    const regularWorkers = Number(form.regularLabours);
+    const exceededCategory = form.listingCategories.find((category) => Number(category.labourCount) > availableWorkers);
+    if (regularWorkers > availableWorkers) {
+      setFeedback({ type: "error", text: `Regular workers (${regularWorkers}) cannot exceed available workers (${availableWorkers}).` });
+      return;
+    }
+    if (exceededCategory) {
+      const categoryName = categories.find((item) => item._id === exceededCategory.categoryId)?.categoryName || "Selected category";
+      setFeedback({ type: "error", text: `${categoryName} workers (${exceededCategory.labourCount}) cannot exceed available workers (${availableWorkers}).` });
+      return;
+    }
+    if (!Number.isFinite(Number(form.regularLabourPrice)) || Number(form.regularLabourPrice) < 0) {
+      setFeedback({ type: "error", text: "Enter a valid rate for regular workers." });
+      return;
+    }
+    if (form.listingCategories.some((category) => !Number.isFinite(Number(category.priceRate)) || Number(category.priceRate) < 0)) {
+      setFeedback({ type: "error", text: "Enter a valid rate for every category." });
       return;
     }
     const payload = {
       totalLabours: Number(form.totalLabours),
       availableLabours: Number(form.availableLabours),
+      regularLabours: Number(form.regularLabours),
+      regularLabourPrice: Number(form.regularLabourPrice),
       gender: { male: Number(form.male), female: Number(form.female) },
-      categories: [
-        {
-          categoryId: form.categoryId,
-          labourCount: Number(form.availableLabours),
-          priceRate: Number(form.priceRate),
-        },
-      ],
+      categories: form.listingCategories.map((category) => ({
+        categoryId: category.categoryId,
+        labourCount: Number(category.labourCount),
+        priceRate: Number(category.priceRate),
+      })),
       description: form.description,
       availabilityStart: form.availabilityStart || undefined,
       availabilityEnd: form.availabilityEnd || undefined,
@@ -249,6 +312,20 @@ function ProviderPage({ user, currentPage, onNavigate, onSignOut }) {
               />
             </label>
           </div>
+          <div className="regular-worker-pricing">
+            <div>
+              <p className="detail-label">Regular workers</p>
+              <p className="form-hint">Workers without a special category.</p>
+            </div>
+            <label>
+              <span>Regular worker count</span>
+              <input name="regularLabours" type="number" min="0" value={form.regularLabours} onChange={update} required />
+            </label>
+            <label>
+              <span>Price per regular worker/day</span>
+              <input name="regularLabourPrice" type="number" min="0" value={form.regularLabourPrice} onChange={update} required />
+            </label>
+          </div>
           <div className="field-row">
             <label>
               <span>Men</span>
@@ -274,14 +351,6 @@ function ProviderPage({ user, currentPage, onNavigate, onSignOut }) {
             </label>
           </div>
           <div className="category-field">
-            <label>
-              <span>Category added to this listing</span>
-              <input
-                value={categories.find((category) => category._id === form.categoryId)?.categoryName || "Add a category below"}
-                readOnly
-                required
-              />
-            </label>
             <button
               className="secondary-button add-category-button"
               type="button"
@@ -290,6 +359,47 @@ function ProviderPage({ user, currentPage, onNavigate, onSignOut }) {
               {showCategoryForm ? "Close" : "+ Add category"}
             </button>
           </div>
+          {form.listingCategories.length > 0 && (
+            <div className="listing-category-editor">
+              <span className="detail-label">Categories in this listing</span>
+              {form.listingCategories.map((listingCategory) => {
+                const category = categories.find((item) => item._id === listingCategory.categoryId);
+                return (
+                  <div className="listing-category-row" key={listingCategory.categoryId}>
+                    <strong>{category?.categoryName || "Category"}</strong>
+                    <label>
+                      <span>Rate per worker/day</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={listingCategory.priceRate}
+                        onChange={(event) => updateListingCategory(listingCategory.categoryId, event.target.value)}
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>Workers in category</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={listingCategory.labourCount}
+                        onChange={(event) => updateListingCategoryCount(listingCategory.categoryId, event.target.value)}
+                        required
+                      />
+                    </label>
+                    <button
+                      className="remove-category"
+                      type="button"
+                      onClick={() => removeListingCategory(listingCategory.categoryId)}
+                      aria-label={`Remove ${category?.categoryName || "category"}`}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           {showCategoryForm && (
             <div className="inline-category-form">
               <input
@@ -309,20 +419,6 @@ function ProviderPage({ user, currentPage, onNavigate, onSignOut }) {
               </button>
             </div>
           )}
-          <div className="field-row">
-            <label>
-              <span>Rate per worker/day</span>
-              <input
-                name="priceRate"
-                type="number"
-                min="0"
-                value={form.priceRate}
-                onChange={update}
-                required
-              />
-            </label>
-            <span />
-          </div>
           <div className="field-row">
             <label>
               <span>Available from</span>
@@ -389,12 +485,13 @@ function ProviderPage({ user, currentPage, onNavigate, onSignOut }) {
               <article className="listing-management" key={listing._id}>
                 <div>
                   <strong>
-                    {listing.categories?.[0]?.categoryId?.categoryName ||
+                    {listing.categories?.map((category) => category.categoryId?.categoryName).filter(Boolean).join(" · ") ||
                       "Labour listing"}
                   </strong>
                   <span>
                     {listing.availableLabours} of {listing.totalLabours} workers
-                    · ₹{listing.categories?.[0]?.priceRate || 0}/day
+                    · Regular: ₹{listing.regularLabourPrice || 0}/day
+                    · Categories: {listing.categories?.map((category) => `${category.categoryId?.categoryName || "Category"} ₹${category.priceRate}/day`).join(" · ")}
                   </span>
                   <small>{listing.description}</small>
                 </div>
@@ -433,6 +530,13 @@ function ProviderPage({ user, currentPage, onNavigate, onSignOut }) {
                 <span className={`booking-status ${booking.status}`}>
                   {booking.status}
                 </span>
+                {booking.review && (
+                <div className="booking-review">
+                  <span className="detail-label">Seeker review</span>
+                  <strong>{'★'.repeat(booking.review.rating)}{'☆'.repeat(5 - booking.review.rating)}</strong>
+                  <small>{booking.review.comment || 'No comment added.'}</small>
+                </div>
+                )}
                 <div className="request-actions">
                   {booking.status === "pending" && (
                     <>
